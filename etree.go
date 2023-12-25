@@ -200,7 +200,7 @@ type Token interface {
 	Parent() *Element
 	Index() int
 	WriteTo(w Writer, s *WriteSettings)
-	dup(parent *Element) Token
+	dup(parent *Element, full bool, existsNS map[string]struct{}) Token
 	setParent(parent *Element)
 	setIndex(index int)
 }
@@ -301,7 +301,7 @@ func NewDocumentWithRoot(e *Element) *Document {
 // Copy returns a recursive, deep copy of the document.
 func (d *Document) Copy() *Document {
 	return &Document{
-		Element:       *(d.Element.dup(nil).(*Element)),
+		Element:       *(d.Element.dup(nil, false, make(map[string]struct{})).(*Element)),
 		ReadSettings:  d.ReadSettings.dup(),
 		WriteSettings: d.WriteSettings.dup(),
 	}
@@ -490,7 +490,15 @@ func newElement(space, tag string, parent *Element) *Element {
 // another element using AddChild, or added to a document with SetRoot or
 // NewDocumentWithRoot.
 func (e *Element) Copy() *Element {
-	return e.dup(nil).(*Element)
+	return e.dup(nil, false, make(map[string]struct{})).(*Element)
+}
+
+// CopyExclusive creates a recursive, deep copy of the element and all its attributes
+// and children with move namespace. The returned element has no parent but can be parented to a
+// another element using AddChild, or added to a document with SetRoot or
+// NewDocumentWithRoot.
+func (e *Element) CopyExclusive() *Element {
+	return e.dup(nil, true, make(map[string]struct{})).(*Element)
 }
 
 // FullTag returns the element e's complete tag, including namespace prefix if
@@ -1157,7 +1165,7 @@ func (e *Element) stripTrailingWhitespace() {
 }
 
 // dup duplicates the element.
-func (e *Element) dup(parent *Element) Token {
+func (e *Element) dup(parent *Element, full bool, existsNS map[string]struct{}) Token {
 	ne := &Element{
 		Space:  e.Space,
 		Tag:    e.Tag,
@@ -1166,8 +1174,19 @@ func (e *Element) dup(parent *Element) Token {
 		parent: parent,
 		index:  e.index,
 	}
+	if full && e.Space != "" {
+		for _, attr := range e.Attr {
+			if attr.Space == "xmlns" {
+				existsNS[attr.Key] = struct{}{}
+			}
+		}
+		if _, ok := existsNS[e.Space]; !ok {
+			ne.CreateAttr("xmlns:"+ne.Space, e.NamespaceURI())
+		}
+
+	}
 	for i, t := range e.Child {
-		ne.Child[i] = t.dup(ne)
+		ne.Child[i] = t.dup(ne, full, existsNS)
 	}
 	copy(ne.Attr, e.Attr)
 	return ne
@@ -1461,7 +1480,7 @@ func (c *CharData) WriteTo(w Writer, s *WriteSettings) {
 }
 
 // dup duplicates the character data.
-func (c *CharData) dup(parent *Element) Token {
+func (c *CharData) dup(parent *Element, full bool, existsNS map[string]struct{}) Token {
 	return &CharData{
 		Data:   c.Data,
 		flags:  c.flags,
@@ -1506,7 +1525,7 @@ func (e *Element) CreateComment(comment string) *Comment {
 }
 
 // dup duplicates the comment.
-func (c *Comment) dup(parent *Element) Token {
+func (c *Comment) dup(parent *Element, full bool, existsNS map[string]struct{}) Token {
 	return &Comment{
 		Data:   c.Data,
 		parent: parent,
@@ -1570,7 +1589,7 @@ func (e *Element) CreateDirective(data string) *Directive {
 }
 
 // dup duplicates the directive.
-func (d *Directive) dup(parent *Element) Token {
+func (d *Directive) dup(parent *Element, full bool, existsNS map[string]struct{}) Token {
 	return &Directive{
 		Data:   d.Data,
 		parent: parent,
@@ -1637,7 +1656,7 @@ func (e *Element) CreateProcInst(target, inst string) *ProcInst {
 }
 
 // dup duplicates the procinst.
-func (p *ProcInst) dup(parent *Element) Token {
+func (p *ProcInst) dup(parent *Element, full bool, existsNS map[string]struct{}) Token {
 	return &ProcInst{
 		Target: p.Target,
 		Inst:   p.Inst,

@@ -67,3 +67,22 @@ func ExamplePath() {
 	//   <author>Charles Dickens</author>
 	// </book>
 }
+func ExampleCopyWithNamespace() {
+	xml := `
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns1="http://smdf">
+	<SOAP-ENV:Body>
+		<ns1:Test>test</ns1:Test>
+	</SOAP-ENV:Body>
+</SOAP-ENV:Envelope>`
+
+	doc := NewDocument()
+	doc.ReadFromString(xml)
+	for _, e := range doc.FindElements("//Body") {
+		doc := NewDocumentWithRoot(e.CopyExclusive())
+		doc.WriteTo(os.Stdout)
+	}
+	// Output:
+	// <SOAP-ENV:Body xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
+	//		<ns1:Test xmlns:ns1="http://smdf">test</ns1:Test>
+	//	</SOAP-ENV:Body>
+}
